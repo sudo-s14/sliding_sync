@@ -37,6 +37,48 @@ class SlidingSyncList {
   int? get serverRoomCount => _serverRoomCount;
   List<List<int>> get ranges => List.unmodifiable(_ranges);
 
+  int _clampEnd(int end, int? total, int? cap) {
+    if (total != null && end >= total) end = total - 1;
+    if (cap != null && end >= cap) end = cap - 1;
+    return end;
+  }
+
+  /// Whether all rooms have been fetched.
+  bool get _isFullyLoaded {
+    final total = _serverRoomCount;
+    final cap = maxRoomsToFetch ?? total;
+    if (total == null) return false;
+
+    switch (syncMode) {
+      case SyncMode.selective:
+        return true; // selective never grows
+      case SyncMode.paging:
+        return _pageOffset >= total || (cap != null && _pageOffset >= cap);
+      case SyncMode.growing:
+        if (_ranges.isEmpty) return false;
+        final currentEnd = _ranges.first[1];
+        return currentEnd >= total - 1 || (cap != null && currentEnd >= cap - 1);
+    }
+  }
+
+  /// Called after processing a sync response for this list.
+  void handleResponse(SyncListResponse listResponse) {
+    _serverRoomCount = listResponse.count;
+
+    // Record the synced range from SYNC ops.
+    for (final op in listResponse.ops) {
+      if (op.range != null) {
+        _ranges = [op.range!];
+        if (syncMode == SyncMode.paging) {
+          _pageOffset = op.range![1] + 1;
+        }
+      }
+    }
+
+    _loadingState =
+        _isFullyLoaded ? ListLoadingState.fullyLoaded : ListLoadingState.partiallyLoaded;
+  }
+
   /// Compute the range to send in the next request, based on sync mode.
   List<int>? computeNextRange() {
     final total = _serverRoomCount;
@@ -44,49 +86,21 @@ class SlidingSyncList {
 
     switch (syncMode) {
       case SyncMode.selective:
-        // Fixed ranges — no auto-advancement.
         return _ranges.isNotEmpty ? _ranges.first : null;
 
       case SyncMode.paging:
-        if (total != null && _pageOffset >= total) return null; // done
+        if (total != null && _pageOffset >= total) return null;
         if (cap != null && _pageOffset >= cap) return null;
         final end = _clampEnd(_pageOffset + batchSize - 1, total, cap);
         return [_pageOffset, end];
 
       case SyncMode.growing:
-        final end = _clampEnd(
-          (_ranges.isNotEmpty ? _ranges.first[1] : -1) + batchSize,
-          total,
-          cap,
-        );
-        return [0, end];
-    }
-  }
-
-  int _clampEnd(int end, int? total, int? cap) {
-    if (total != null && end >= total) end = total - 1;
-    if (cap != null && end >= cap) end = cap - 1;
-    return end;
-  }
-
-  /// Called after processing a sync response for this list.
-  void handleResponse(SyncListResponse listResponse) {
-    _serverRoomCount = listResponse.count;
-
-    // Apply SYNC ops to advance paging offset.
-    for (final op in listResponse.ops) {
-      if (op.range != null && syncMode == SyncMode.paging) {
-        _pageOffset = op.range![1] + 1;
-      }
-    }
-
-    // Update ranges & loading state.
-    final nextRange = computeNextRange();
-    if (nextRange != null) {
-      _ranges = [nextRange];
-      _loadingState = ListLoadingState.partiallyLoaded;
-    } else {
-      _loadingState = ListLoadingState.fullyLoaded;
+        // Grow from the last synced end position.
+        final currentEnd = _ranges.isNotEmpty ? _ranges.first[1] : -1;
+        final newEnd = _clampEnd(currentEnd + batchSize, total, cap);
+        // If we can't grow further, re-send the current range for updates.
+        if (newEnd <= currentEnd) return [0, currentEnd];
+        return [0, newEnd];
     }
   }
 

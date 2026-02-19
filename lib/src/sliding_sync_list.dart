@@ -96,8 +96,10 @@ class SlidingSyncList {
         return [_pageOffset, end];
 
       case SyncMode.growing:
-        // Grow from the last synced end position.
         final currentEnd = _ranges.isNotEmpty ? _ranges.first[1] : -1;
+        // First request (no server response yet) — send the initial range as-is.
+        if (total == null) return _ranges.isNotEmpty ? _ranges.first : [0, batchSize - 1];
+        // Grow from the last synced end position.
         final newEnd = _clampEnd(currentEnd + batchSize, total, cap);
         // If we can't grow further, re-send the current range for updates.
         if (newEnd <= currentEnd) return [0, currentEnd];

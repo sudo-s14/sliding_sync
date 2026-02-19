@@ -59,6 +59,17 @@ void main() {
   });
 
   group('SlidingSyncList — growing mode', () {
+    test('first request sends initial range without growing', () {
+      final list = SlidingSyncList(
+        name: 'grow',
+        syncMode: SyncMode.growing,
+        batchSize: 10,
+      );
+
+      // Before any response, should send [0, 9] — not [0, 19].
+      expect(list.computeNextRange(), [0, 9]);
+    });
+
     test('grows by batchSize each tick', () {
       final list = SlidingSyncList(
         name: 'grow',
@@ -66,14 +77,17 @@ void main() {
         batchSize: 20,
       );
 
-      // First request range.
-      expect(list.computeNextRange(), [0, 39]);
+      // First request — sends initial range as-is.
+      expect(list.computeNextRange(), [0, 19]);
 
-      // Server responds with synced range [0, 39], 100 total rooms.
-      list.handleResponse(_response(100, [0, 39]));
+      // Server responds with synced range [0, 19], 100 total rooms.
+      list.handleResponse(_response(100, [0, 19]));
       expect(list.loadingState, ListLoadingState.partiallyLoaded);
 
-      // Next tick should grow to [0, 59].
+      // Next tick should grow to [0, 39].
+      expect(list.computeNextRange(), [0, 39]);
+
+      list.handleResponse(_response(100, [0, 39]));
       expect(list.computeNextRange(), [0, 59]);
 
       list.handleResponse(_response(100, [0, 59]));
@@ -124,10 +138,13 @@ void main() {
         batchSize: 10,
       );
 
-      // Initial range is [0, 9]. computeNextRange grows to [0, 19].
-      list.handleResponse(_response(50, [0, 19]));
-      // After handleResponse stores [0, 19], next compute should be [0, 29] — not [0, 39].
-      expect(list.computeNextRange(), [0, 29]);
+      // First request sends initial range [0, 9].
+      expect(list.computeNextRange(), [0, 9]);
+
+      // Server responds with [0, 9].
+      list.handleResponse(_response(50, [0, 9]));
+      // Next compute should be [0, 19] — grows by exactly batchSize.
+      expect(list.computeNextRange(), [0, 19]);
 
       list.handleResponse(_response(50, [0, 29]));
       expect(list.computeNextRange(), [0, 39]);

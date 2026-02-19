@@ -168,6 +168,15 @@ class SlidingSync {
   // ── Logging ──
 
   void _logRequest(SlidingSyncRequest request) {
+    print(formatRequestLog(request));
+  }
+
+  void _logResponse(SlidingSyncResponse response, UpdateSummary summary) {
+    print(formatResponseLog(response, summary));
+  }
+
+  /// Formats a request log line. Exposed for testing.
+  String formatRequestLog(SlidingSyncRequest request) {
     final buf = StringBuffer('[SlidingSync] >>> REQUEST');
     buf.write(' pos=${request.pos ?? 'null'}');
     buf.write(' timeout=${request.timeout}ms');
@@ -182,10 +191,11 @@ class SlidingSync {
     if (request.extensions.isNotEmpty) {
       buf.write(' extensions=${request.extensions.keys.toList()}');
     }
-    print(buf);
+    return buf.toString();
   }
 
-  void _logResponse(SlidingSyncResponse response, UpdateSummary summary) {
+  /// Formats a response log line. Exposed for testing.
+  String formatResponseLog(SlidingSyncResponse response, UpdateSummary summary) {
     final buf = StringBuffer('[SlidingSync] <<< RESPONSE');
     buf.write(' pos=${response.pos}');
     for (final entry in response.lists.entries) {
@@ -202,6 +212,6 @@ class SlidingSync {
       buf.write(' ${entry.key}:${entry.value.loadingState.name}');
     }
     if (isFullySynced) buf.write(' [FULLY SYNCED]');
-    print(buf);
+    return buf.toString();
   }
 }

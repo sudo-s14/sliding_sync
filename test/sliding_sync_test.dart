@@ -345,4 +345,168 @@ void main() {
       expect(sync.isFullySynced, isTrue);
     });
   });
+
+  group('SlidingSync — logging', () {
+    group('formatRequestLog', () {
+      test('includes pos, timeout, and conn_id', () {
+        final sync = _createSync();
+        final request = sync.buildRequest();
+        final log = sync.formatRequestLog(request);
+
+        expect(log, contains('>>> REQUEST'));
+        expect(log, contains('pos=null'));
+        expect(log, contains('timeout=2000ms'));
+        expect(log, contains('conn_id=main'));
+      });
+
+      test('includes list ranges', () {
+        final sync = _createSync();
+        sync.addList(SlidingSyncList(name: 'rooms', batchSize: 10));
+
+        final request = sync.buildRequest();
+        final log = sync.formatRequestLog(request);
+
+        expect(log, contains('list:rooms=[0, 9]'));
+      });
+
+      test('includes subscriptions', () {
+        final sync = _createSync();
+        sync.subscribeToRooms(
+          ['!a:ex.com'],
+          const RoomSubscription(timelineLimit: 10),
+        );
+
+        final request = sync.buildRequest();
+        final log = sync.formatRequestLog(request);
+
+        expect(log, contains('subscriptions=[!a:ex.com]'));
+      });
+
+      test('includes extensions', () {
+        final sync = _createSync();
+        sync.enableExtension('e2ee');
+        sync.enableExtension('typing');
+
+        final request = sync.buildRequest();
+        final log = sync.formatRequestLog(request);
+
+        expect(log, contains('extensions=[e2ee, typing]'));
+      });
+
+      test('omits subscriptions and extensions when empty', () {
+        final sync = _createSync();
+        final request = sync.buildRequest();
+        final log = sync.formatRequestLog(request);
+
+        expect(log, isNot(contains('subscriptions=')));
+        expect(log, isNot(contains('extensions=')));
+      });
+
+      test('shows pos after first response', () {
+        final sync = _createSync();
+        sync.handleResponse(const SlidingSyncResponse(pos: 'tok_42'));
+
+        final request = sync.buildRequest();
+        final log = sync.formatRequestLog(request);
+
+        expect(log, contains('pos=tok_42'));
+      });
+    });
+
+    group('formatResponseLog', () {
+      test('includes pos', () {
+        final sync = _createSync();
+        const response = SlidingSyncResponse(pos: 'abc');
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, contains('<<< RESPONSE'));
+        expect(log, contains('pos=abc'));
+      });
+
+      test('includes list count and ranges', () {
+        final sync = _createSync();
+        sync.addList(SlidingSyncList(name: 'rooms', batchSize: 10));
+
+        final response = SlidingSyncResponse(
+          pos: '1',
+          lists: {'rooms': _listResponse(50, [0, 9])},
+        );
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, contains('list:rooms(count=50, ranges='));
+      });
+
+      test('includes room update count', () {
+        final sync = _createSync();
+        const response = SlidingSyncResponse(
+          pos: '1',
+          rooms: {
+            '!a:ex.com': SlidingRoomResponse(name: 'A', initial: true),
+            '!b:ex.com': SlidingRoomResponse(name: 'B', initial: true),
+          },
+        );
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, contains('rooms=2 updated'));
+      });
+
+      test('omits rooms when none updated', () {
+        final sync = _createSync();
+        const response = SlidingSyncResponse(pos: '1');
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, isNot(contains('rooms=')));
+      });
+
+      test('includes loading state per list', () {
+        final sync = _createSync();
+        sync.addList(SlidingSyncList(name: 'rooms', batchSize: 10));
+
+        final response = SlidingSyncResponse(
+          pos: '1',
+          lists: {'rooms': _listResponse(50, [0, 9])},
+        );
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, contains('rooms:partiallyLoaded'));
+      });
+
+      test('shows FULLY SYNCED when all lists loaded', () {
+        final sync = _createSync();
+        sync.addList(SlidingSyncList(
+          name: 'rooms',
+          syncMode: SyncMode.selective,
+          initialRanges: [[0, 9]],
+        ));
+
+        final response = SlidingSyncResponse(
+          pos: '1',
+          lists: {'rooms': _listResponse(10, [0, 9])},
+        );
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, contains('[FULLY SYNCED]'));
+      });
+
+      test('omits FULLY SYNCED when not all lists loaded', () {
+        final sync = _createSync();
+        sync.addList(SlidingSyncList(name: 'rooms', batchSize: 10));
+
+        final response = SlidingSyncResponse(
+          pos: '1',
+          lists: {'rooms': _listResponse(50, [0, 9])},
+        );
+        final summary = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, summary);
+
+        expect(log, isNot(contains('[FULLY SYNCED]')));
+      });
+    });
+  });
 }

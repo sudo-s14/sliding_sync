@@ -8,12 +8,13 @@ import 'enums.dart';
 import 'exception.dart';
 import 'models/request.dart';
 import 'models/response.dart';
-import 'models/update_summary.dart';
+import 'models/sync_update.dart';
 import 'sliding_sync_list.dart';
 
 class SlidingSync {
   final Uri homeserverUrl;
   final String accessToken;
+  final String? userId;
   final String connId;
   final Duration catchUpTimeout;
   final Duration longPollTimeout;
@@ -24,15 +25,17 @@ class SlidingSync {
   final Map<String, ExtensionConfig> _extensions = {};
 
   String? _pos;
+  String? _currentUserId;
 
   SlidingSync({
     required this.homeserverUrl,
     required this.accessToken,
     required this.client,
+    this.userId,
     this.connId = 'main',
     this.catchUpTimeout = const Duration(seconds: 2),
     this.longPollTimeout = const Duration(seconds: 30),
-  });
+  }) : _currentUserId = userId;
 
   // ── List management ──
 
@@ -97,11 +100,10 @@ class SlidingSync {
 
   // ── Response handling ──
 
-  UpdateSummary handleResponse(SlidingSyncResponse response) {
+  SyncUpdate handleResponse(SlidingSyncResponse response) {
     _pos = response.pos;
 
     final updatedLists = <String>[];
-    final updatedRooms = <String>[];
 
     // Process list responses.
     for (final entry in response.lists.entries) {
@@ -112,10 +114,14 @@ class SlidingSync {
       }
     }
 
-    // Collect updated room IDs.
-    updatedRooms.addAll(response.rooms.keys);
-
-    return UpdateSummary(lists: updatedLists, rooms: updatedRooms);
+    // Parse rooms and extensions into SyncUpdate.
+    return buildSyncUpdate(
+      pos: response.pos,
+      updatedLists: updatedLists,
+      rawRooms: response.rooms,
+      rawExtensions: response.extensions,
+      currentUserId: _currentUserId,
+    );
   }
 
   // ── HTTP sync call ──
@@ -156,14 +162,14 @@ class SlidingSync {
 
   // ── Single sync tick ──
 
-  /// Performs a single sync request and returns the update summary.
-  Future<UpdateSummary> syncOnce() async {
+  /// Performs a single sync request and returns the parsed sync update.
+  Future<SyncUpdate> syncOnce() async {
     final request = buildRequest();
     _logRequest(request);
     final response = await _sendRequest(request);
-    final summary = handleResponse(response);
-    _logResponse(response, summary);
-    return summary;
+    final update = handleResponse(response);
+    _logResponse(response, update);
+    return update;
   }
 
   // ── Logging ──
@@ -172,8 +178,8 @@ class SlidingSync {
     print(formatRequestLog(request));
   }
 
-  void _logResponse(SlidingSyncResponse response, UpdateSummary summary) {
-    print(formatResponseLog(response, summary));
+  void _logResponse(SlidingSyncResponse response, SyncUpdate update) {
+    print(formatResponseLog(response, update));
   }
 
   /// Formats a request log line. Exposed for testing.
@@ -196,7 +202,7 @@ class SlidingSync {
   }
 
   /// Formats a response log line. Exposed for testing.
-  String formatResponseLog(SlidingSyncResponse response, UpdateSummary summary) {
+  String formatResponseLog(SlidingSyncResponse response, SyncUpdate update) {
     final buf = StringBuffer('[SlidingSync] <<< RESPONSE');
     buf.write(' pos=${response.pos}');
     for (final entry in response.lists.entries) {
@@ -206,8 +212,15 @@ class SlidingSync {
       if (ranges.isNotEmpty) buf.write(', ranges=$ranges');
       buf.write(')');
     }
-    if (summary.rooms.isNotEmpty) {
-      buf.write(' rooms=${summary.rooms.length} updated');
+    final totalRooms = update.rooms.totalCount;
+    if (totalRooms > 0) {
+      buf.write(' rooms=$totalRooms updated');
+      if (update.rooms.invited.isNotEmpty) {
+        buf.write(' (${update.rooms.invited.length} invited)');
+      }
+      if (update.rooms.left.isNotEmpty) {
+        buf.write(' (${update.rooms.left.length} left)');
+      }
     }
     for (final entry in _lists.entries) {
       buf.write(' ${entry.key}:${entry.value.loadingState.name}');

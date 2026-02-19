@@ -8,6 +8,7 @@ export 'src/enums.dart';
 export 'src/exception.dart';
 export 'src/models/request.dart';
 export 'src/models/response.dart';
+export 'src/models/sync_update.dart';
 export 'src/models/update_summary.dart';
 export 'src/sliding_sync.dart';
 export 'src/sliding_sync_list.dart';

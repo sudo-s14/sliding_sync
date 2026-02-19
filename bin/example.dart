@@ -1,5 +1,6 @@
 /// Usage example for the sliding sync implementation.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:sliding_sync/sliding_sync.dart';
@@ -47,8 +48,28 @@ Future<void> main() async {
   slidingSync.enableExtension('e2ee');
   slidingSync.enableExtension('to_device');
 
-  // Run the sync loop.
-  await for (final update in slidingSync.sync()) {
+  // Run the sync loop using syncOnce() in a stream.
+  bool running = true;
+  final syncStream = Stream<UpdateSummary>.fromFuture(slidingSync.syncOnce())
+      .asyncExpand((_) async* {
+    yield _;
+    while (running) {
+      try {
+        yield await slidingSync.syncOnce();
+      } on SlidingSyncException catch (e) {
+        print('[SlidingSync] ${e.message}');
+        await Future.delayed(const Duration(seconds: 1));
+      } on TimeoutException {
+        // Long-poll timed out — retry immediately.
+        continue;
+      } catch (e) {
+        print('[SlidingSync] Unexpected error: $e');
+        await Future.delayed(const Duration(seconds: 5));
+      }
+    }
+  });
+
+  await for (final update in syncStream) {
     print(update);
 
     // Example: stop after fully loading the all-rooms list.
@@ -57,7 +78,7 @@ Future<void> main() async {
       print(
         'All rooms loaded (${allRooms!.serverRoomCount} total). Stopping.',
       );
-      slidingSync.stop();
+      running = false;
     }
   }
 }

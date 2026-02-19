@@ -1,6 +1,5 @@
 /// SlidingSync — main sync engine with long-polling loop.
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -23,7 +22,6 @@ class SlidingSync {
   final Map<String, ExtensionConfig> _extensions = {};
 
   String? _pos;
-  bool _running = false;
 
   SlidingSync({
     required this.homeserverUrl,
@@ -144,32 +142,12 @@ class SlidingSync {
     );
   }
 
-  // ── Sync loop (async generator) ──
+  // ── Single sync tick ──
 
-  Stream<UpdateSummary> sync() async* {
-    _running = true;
-
-    while (_running) {
-      try {
-        final request = buildRequest();
-        final response = await _sendRequest(request);
-        final summary = handleResponse(response);
-        yield summary;
-      } on SlidingSyncException catch (e) {
-        print('[SlidingSync] ${e.message}');
-        // Brief pause before retrying.
-        await Future.delayed(const Duration(seconds: 1));
-      } on TimeoutException {
-        // Long-poll timed out — just loop and try again.
-        continue;
-      } catch (e) {
-        print('[SlidingSync] Unexpected error: $e');
-        await Future.delayed(const Duration(seconds: 5));
-      }
-    }
-  }
-
-  void stop() {
-    _running = false;
+  /// Performs a single sync request and returns the update summary.
+  Future<UpdateSummary> syncOnce() async {
+    final request = buildRequest();
+    final response = await _sendRequest(request);
+    return handleResponse(response);
   }
 }

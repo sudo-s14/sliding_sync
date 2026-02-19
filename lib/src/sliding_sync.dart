@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'enums.dart';
 import 'exception.dart';
 import 'models/request.dart';
 import 'models/response.dart';
@@ -13,7 +14,8 @@ class SlidingSync {
   final String homeserverUrl;
   final String accessToken;
   final String connId;
-  final Duration pollTimeout;
+  final Duration catchUpTimeout;
+  final Duration longPollTimeout;
   final Duration networkTimeout;
   final HttpClient httpClient;
 
@@ -28,7 +30,8 @@ class SlidingSync {
     required this.accessToken,
     required this.httpClient,
     this.connId = 'main',
-    this.pollTimeout = const Duration(seconds: 30),
+    this.catchUpTimeout = const Duration(seconds: 2),
+    this.longPollTimeout = const Duration(seconds: 30),
     this.networkTimeout = const Duration(seconds: 35),
   });
 
@@ -72,13 +75,21 @@ class SlidingSync {
     }
   }
 
+  // ── Sync state ──
+
+  /// Whether all lists are fully loaded.
+  bool get isFullySynced =>
+      _lists.isNotEmpty &&
+      _lists.values.every((l) => l.loadingState == ListLoadingState.fullyLoaded);
+
   // ── Request building ──
 
   SlidingSyncRequest buildRequest() {
+    final timeout = isFullySynced ? longPollTimeout : catchUpTimeout;
     return SlidingSyncRequest(
       connId: connId,
       pos: _pos,
-      timeout: pollTimeout.inMilliseconds,
+      timeout: timeout.inMilliseconds,
       lists: _lists.map((name, list) => MapEntry(name, list.toConfig())),
       roomSubscriptions: Map.of(_roomSubscriptions),
       extensions: Map.of(_extensions),

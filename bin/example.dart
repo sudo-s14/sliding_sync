@@ -12,6 +12,9 @@ Future<void> main() async {
     homeserverUrl: 'https://matrix.example.com',
     accessToken: 'syt_your_token_here',
     httpClient: httpClient,
+    // Fast polling while catching up, slow long-poll once fully synced.
+    catchUpTimeout: const Duration(seconds: 2),
+    longPollTimeout: const Duration(seconds: 30),
   );
 
   // Add a growing list that fetches 20 rooms at a time.
@@ -48,37 +51,26 @@ Future<void> main() async {
   slidingSync.enableExtension('e2ee');
   slidingSync.enableExtension('to_device');
 
-  // Run the sync loop using syncOnce() in a stream.
-  bool running = true;
-  final syncStream = Stream<UpdateSummary>.fromFuture(slidingSync.syncOnce())
-      .asyncExpand((_) async* {
-    yield _;
-    while (running) {
-      try {
-        yield await slidingSync.syncOnce();
-      } on SlidingSyncException catch (e) {
-        print('[SlidingSync] ${e.message}');
-        await Future.delayed(const Duration(seconds: 1));
-      } on TimeoutException {
-        // Long-poll timed out — retry immediately.
-        continue;
-      } catch (e) {
-        print('[SlidingSync] Unexpected error: $e');
-        await Future.delayed(const Duration(seconds: 5));
+  // Run the sync loop.
+  // During catch-up: requests use 2s timeout for fast batching.
+  // Once fully synced: requests use 30s timeout for long-polling.
+  while (true) {
+    try {
+      final update = await slidingSync.syncOnce();
+      print(update);
+
+      if (slidingSync.isFullySynced) {
+        print('Fully synced — now long-polling for updates.');
       }
-    }
-  });
-
-  await for (final update in syncStream) {
-    print(update);
-
-    // Example: stop after fully loading the all-rooms list.
-    final allRooms = slidingSync.getList('all-rooms');
-    if (allRooms?.loadingState == ListLoadingState.fullyLoaded) {
-      print(
-        'All rooms loaded (${allRooms!.serverRoomCount} total). Stopping.',
-      );
-      running = false;
+    } on SlidingSyncException catch (e) {
+      print('[SlidingSync] ${e.message}');
+      await Future.delayed(const Duration(seconds: 1));
+    } on TimeoutException {
+      // Long-poll timed out — retry immediately.
+      continue;
+    } catch (e) {
+      print('[SlidingSync] Unexpected error: $e');
+      await Future.delayed(const Duration(seconds: 5));
     }
   }
 }

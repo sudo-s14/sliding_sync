@@ -22,6 +22,9 @@ class SlidingSyncList {
   // For paging: tracks the next page start index.
   int _pageOffset = 0;
 
+  // The last range sent in a request, used as fallback when server omits ops.
+  List<int>? _lastRequestedRange;
+
   SlidingSyncList({
     required this.name,
     this.syncMode = SyncMode.growing,
@@ -67,12 +70,19 @@ class SlidingSyncList {
     _serverRoomCount = listResponse.count;
 
     // Record the synced range from SYNC ops.
+    List<int>? syncedRange;
     for (final op in listResponse.ops) {
       if (op.range != null) {
-        _ranges = [op.range!];
-        if (syncMode == SyncMode.paging) {
-          _pageOffset = op.range![1] + 1;
-        }
+        syncedRange = op.range!;
+      }
+    }
+
+    // Fall back to the last requested range if server omits ops.
+    final range = syncedRange ?? _lastRequestedRange;
+    if (range != null) {
+      _ranges = [range];
+      if (syncMode == SyncMode.paging) {
+        _pageOffset = range[1] + 1;
       }
     }
 
@@ -110,6 +120,7 @@ class SlidingSyncList {
   /// Build the list config portion of the request.
   SyncListConfig toConfig() {
     final range = computeNextRange();
+    _lastRequestedRange = range;
     return SyncListConfig(
       range: range,
       timelineLimit: timelineLimit,

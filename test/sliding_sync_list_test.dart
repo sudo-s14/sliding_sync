@@ -223,17 +223,41 @@ void main() {
   });
 
   group('SlidingSyncList — edge cases', () {
-    test('handles response with no ops', () {
+    test('handles response with no ops by using last requested range', () {
       final list = SlidingSyncList(
         name: 'edge',
         syncMode: SyncMode.growing,
         batchSize: 10,
       );
 
-      // Response with count but no ops — ranges stay at initial.
+      // Build a request so the last requested range is tracked.
+      list.toConfig();
+
+      // Response with count but no ops — falls back to last requested range.
       list.handleResponse(_response(50));
       expect(list.serverRoomCount, 50);
       expect(list.loadingState, ListLoadingState.partiallyLoaded);
+
+      // Should still advance on the next tick.
+      expect(list.computeNextRange(), [0, 19]);
+    });
+
+    test('growing advances even when server never returns ops', () {
+      final list = SlidingSyncList(
+        name: 'no-ops',
+        syncMode: SyncMode.growing,
+        batchSize: 10,
+      );
+
+      // Tick 1: toConfig records [0, 9], server responds with no ops.
+      list.toConfig();
+      list.handleResponse(_response(50));
+      expect(list.computeNextRange(), [0, 19]);
+
+      // Tick 2: toConfig records [0, 19], server responds with no ops.
+      list.toConfig();
+      list.handleResponse(_response(50));
+      expect(list.computeNextRange(), [0, 29]);
     });
 
     test('handles server with zero rooms', () {

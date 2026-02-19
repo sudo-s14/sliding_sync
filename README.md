@@ -19,7 +19,7 @@ sliding_sync/
 │       │   ├── response.dart            # Response models (SyncOp, room response, list response)
 │       │   └── update_summary.dart      # UpdateSummary
 │       ├── sliding_sync_list.dart       # SlidingSyncList (window + mode logic)
-│       └── sliding_sync.dart            # SlidingSync (main engine + sync loop)
+│       └── sliding_sync.dart            # SlidingSync (main engine + syncOnce)
 └── bin/
     └── example.dart                     # Usage example
 ```
@@ -60,9 +60,19 @@ slidingSync.subscribeToRooms(
 slidingSync.enableExtension('e2ee');
 slidingSync.enableExtension('to_device');
 
-// Run the sync loop.
-await for (final update in slidingSync.sync()) {
-  print('Lists: ${update.lists}, Rooms: ${update.rooms}');
+// Single sync tick.
+final update = await slidingSync.syncOnce();
+print('Lists: ${update.lists}, Rooms: ${update.rooms}');
+
+// Or run in a loop.
+while (true) {
+  try {
+    final update = await slidingSync.syncOnce();
+    print(update);
+  } on SlidingSyncException catch (e) {
+    print('Sync error: ${e.message}');
+    await Future.delayed(Duration(seconds: 1));
+  }
 }
 ```
 

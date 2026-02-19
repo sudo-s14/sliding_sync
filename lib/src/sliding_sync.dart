@@ -124,7 +124,7 @@ class SlidingSync {
   Future<SlidingSyncResponse> _sendRequest(SlidingSyncRequest request) async {
     final uri = Uri.parse(
       '$homeserverUrl/_matrix/client/unstable/org.matrix.msc4186/sync',
-    );
+    ).replace(queryParameters: request.toQueryParameters());
     final httpRequest = await httpClient.postUrl(uri);
     httpRequest.headers.set('Authorization', 'Bearer $accessToken');
     httpRequest.headers.contentType = ContentType.json;

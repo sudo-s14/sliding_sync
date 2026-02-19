@@ -84,10 +84,15 @@ class SlidingSyncRequest {
     this.extensions = const {},
   });
 
+  /// Query parameters for the URL (?pos=...&timeout=...).
+  Map<String, String> toQueryParameters() => {
+        if (pos != null) 'pos': pos!,
+        if (timeout != null) 'timeout': timeout.toString(),
+      };
+
+  /// JSON body (everything except pos and timeout).
   Map<String, dynamic> toJson() => {
         if (connId != null) 'conn_id': connId,
-        if (pos != null) 'pos': pos,
-        if (timeout != null) 'timeout': timeout,
         'lists': lists.map((k, v) => MapEntry(k, v.toJson())),
         if (roomSubscriptions.isNotEmpty)
           'room_subscriptions':

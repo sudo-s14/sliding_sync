@@ -36,6 +36,8 @@ final slidingSync = SlidingSync(
   homeserverUrl: 'https://matrix.example.com',
   accessToken: 'syt_your_token_here',
   httpClient: httpClient,
+  catchUpTimeout: Duration(seconds: 2),   // fast polling while loading
+  longPollTimeout: Duration(seconds: 30), // slow poll once fully synced
 );
 
 // Add a growing list that fetches 20 rooms at a time.
@@ -64,11 +66,15 @@ slidingSync.enableExtension('to_device');
 final update = await slidingSync.syncOnce();
 print('Lists: ${update.lists}, Rooms: ${update.rooms}');
 
-// Or run in a loop.
+// Or run in a loop — automatically uses fast timeout during catch-up,
+// then switches to long-poll once all lists are fully synced.
 while (true) {
   try {
     final update = await slidingSync.syncOnce();
     print(update);
+    if (slidingSync.isFullySynced) {
+      print('Fully synced — now long-polling for updates.');
+    }
   } on SlidingSyncException catch (e) {
     print('Sync error: ${e.message}');
     await Future.delayed(Duration(seconds: 1));
@@ -128,15 +134,20 @@ PartiallyLoaded ↔ FullyLoaded
 
 ## Protocol Details (MSC4186)
 
-**Endpoint:** `POST /_matrix/client/unstable/org.matrix.msc4186/sync`
+**Endpoint:** `POST /_matrix/client/unstable/org.matrix.msc4186/sync?pos=<token>&timeout=<ms>`
 
-### Request
+### Query Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `pos` | Position token from previous response (omitted on first request) |
+| `timeout` | Long-polling duration in ms (2000 during catch-up, 30000 once synced) |
+
+### Request Body (JSON)
 
 | Field | Description |
 |-------|-------------|
 | `conn_id` | Connection identifier |
-| `pos` | Position token from previous response |
-| `timeout` | Long-polling duration (ms) |
 | `lists` | Map of list configurations (range, timeline_limit, required_state, filters) |
 | `room_subscriptions` | Map of room IDs to subscription configs |
 | `extensions` | Optional data requests (e2ee, to_device, etc.) |

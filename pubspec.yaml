@@ -1,0 +1,6 @@
+name: sliding_sync
+description: Minimal Sliding Sync (MSC4186) reference implementation in Dart.
+version: 0.1.0
+
+environment:
+  sdk: ^3.0.0

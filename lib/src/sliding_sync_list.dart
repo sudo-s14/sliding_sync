@@ -25,13 +25,14 @@ class SlidingSyncList {
   SlidingSyncList({
     required this.name,
     this.syncMode = SyncMode.growing,
-    this.batchSize = 20,
+    int batchSize = 20,
     this.maxRoomsToFetch,
     this.timelineLimit = 10,
     this.requiredState = const [],
     this.filters,
     List<List<int>>? initialRanges,
-  }) : _ranges = initialRanges ?? [[0, batchSize - 1]];
+  })  : batchSize = batchSize,
+        _ranges = initialRanges ?? [[0, batchSize - 1]];
 
   ListLoadingState get loadingState => _loadingState;
   int? get serverRoomCount => _serverRoomCount;

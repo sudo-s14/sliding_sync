@@ -158,7 +158,50 @@ class SlidingSync {
   /// Performs a single sync request and returns the update summary.
   Future<UpdateSummary> syncOnce() async {
     final request = buildRequest();
+    _logRequest(request);
     final response = await _sendRequest(request);
-    return handleResponse(response);
+    final summary = handleResponse(response);
+    _logResponse(response, summary);
+    return summary;
+  }
+
+  // ── Logging ──
+
+  void _logRequest(SlidingSyncRequest request) {
+    final buf = StringBuffer('[SlidingSync] >>> REQUEST');
+    buf.write(' pos=${request.pos ?? 'null'}');
+    buf.write(' timeout=${request.timeout}ms');
+    buf.write(' conn_id=${request.connId}');
+    for (final entry in request.lists.entries) {
+      final range = entry.value.range;
+      buf.write(' list:${entry.key}=${range ?? 'null'}');
+    }
+    if (request.roomSubscriptions.isNotEmpty) {
+      buf.write(' subscriptions=${request.roomSubscriptions.keys.toList()}');
+    }
+    if (request.extensions.isNotEmpty) {
+      buf.write(' extensions=${request.extensions.keys.toList()}');
+    }
+    print(buf);
+  }
+
+  void _logResponse(SlidingSyncResponse response, UpdateSummary summary) {
+    final buf = StringBuffer('[SlidingSync] <<< RESPONSE');
+    buf.write(' pos=${response.pos}');
+    for (final entry in response.lists.entries) {
+      final ops = entry.value.ops;
+      final ranges = ops.where((o) => o.range != null).map((o) => o.range);
+      buf.write(' list:${entry.key}(count=${entry.value.count}');
+      if (ranges.isNotEmpty) buf.write(', ranges=$ranges');
+      buf.write(')');
+    }
+    if (summary.rooms.isNotEmpty) {
+      buf.write(' rooms=${summary.rooms.length} updated');
+    }
+    for (final entry in _lists.entries) {
+      buf.write(' ${entry.key}:${entry.value.loadingState.name}');
+    }
+    if (isFullySynced) buf.write(' [FULLY SYNCED]');
+    print(buf);
   }
 }

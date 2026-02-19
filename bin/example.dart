@@ -1,17 +1,17 @@
 /// Usage example for the sliding sync implementation.
 
 import 'dart:async';
-import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:sliding_sync/sliding_sync.dart';
 
 Future<void> main() async {
-  final httpClient = HttpClient();
+  final client = http.Client();
 
   final slidingSync = SlidingSync(
-    homeserverUrl: 'https://matrix.example.com',
+    homeserverUrl: Uri.parse('https://matrix.example.com'),
     accessToken: 'syt_your_token_here',
-    httpClient: httpClient,
+    client: client,
     // Fast polling while catching up, slow long-poll once fully synced.
     catchUpTimeout: const Duration(seconds: 2),
     longPollTimeout: const Duration(seconds: 30),

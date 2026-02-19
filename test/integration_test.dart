@@ -1,14 +1,13 @@
-import 'dart:io';
-
+import 'package:http/http.dart' as http;
 import 'package:sliding_sync/sliding_sync.dart';
 import 'package:test/test.dart';
 
 void main() {
   test('growing mode full flow: buildRequest + handleResponse for 4 ticks', () {
     final sync = SlidingSync(
-      homeserverUrl: 'https://example.com',
+      homeserverUrl: Uri.parse('https://example.com'),
       accessToken: 'token',
-      httpClient: HttpClient(),
+      client: http.Client(),
     );
     sync.addList(SlidingSyncList(
       name: 'rooms',

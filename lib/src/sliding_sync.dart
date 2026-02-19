@@ -1,7 +1,8 @@
 /// SlidingSync — main sync engine with long-polling loop.
 
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 import 'enums.dart';
 import 'exception.dart';
@@ -11,13 +12,12 @@ import 'models/update_summary.dart';
 import 'sliding_sync_list.dart';
 
 class SlidingSync {
-  final String homeserverUrl;
+  final Uri homeserverUrl;
   final String accessToken;
   final String connId;
   final Duration catchUpTimeout;
   final Duration longPollTimeout;
-  final Duration networkTimeout;
-  final HttpClient httpClient;
+  final http.Client client;
 
   final Map<String, SlidingSyncList> _lists = {};
   final Map<String, RoomSubscription> _roomSubscriptions = {};
@@ -28,11 +28,10 @@ class SlidingSync {
   SlidingSync({
     required this.homeserverUrl,
     required this.accessToken,
-    required this.httpClient,
+    required this.client,
     this.connId = 'main',
     this.catchUpTimeout = const Duration(seconds: 2),
     this.longPollTimeout = const Duration(seconds: 30),
-    this.networkTimeout = const Duration(seconds: 35),
   });
 
   // ── List management ──
@@ -122,25 +121,27 @@ class SlidingSync {
   // ── HTTP sync call ──
 
   Future<SlidingSyncResponse> _sendRequest(SlidingSyncRequest request) async {
-    final uri = Uri.parse(
-      '$homeserverUrl/_matrix/client/unstable/org.matrix.msc4186/sync',
+    final uri = homeserverUrl.resolve(
+      '/_matrix/client/unstable/org.matrix.msc4186/sync',
     ).replace(queryParameters: request.toQueryParameters());
-    final httpRequest = await httpClient.postUrl(uri);
-    httpRequest.headers.set('Authorization', 'Bearer $accessToken');
-    httpRequest.headers.contentType = ContentType.json;
-    httpRequest.write(jsonEncode(request.toJson()));
 
-    final httpResponse = await httpRequest.close().timeout(networkTimeout);
-    final body = await utf8.decoder.bind(httpResponse).join();
+    final response = await client.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(request.toJson()),
+    );
 
-    if (httpResponse.statusCode == 200) {
+    if (response.statusCode == 200) {
       return SlidingSyncResponse.fromJson(
-        jsonDecode(body) as Map<String, dynamic>,
+        jsonDecode(response.body) as Map<String, dynamic>,
       );
     }
 
     // Handle M_UNKNOWN_POS — server expired our connection.
-    final decoded = jsonDecode(body) as Map<String, dynamic>;
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     if (decoded['errcode'] == 'M_UNKNOWN_POS') {
       _pos = null; // Reset position, next request starts fresh.
       throw SlidingSyncException(
@@ -149,7 +150,7 @@ class SlidingSync {
     }
 
     throw SlidingSyncException(
-      'Sync failed: ${httpResponse.statusCode} — $body',
+      'Sync failed: ${response.statusCode} — ${response.body}',
     );
   }
 

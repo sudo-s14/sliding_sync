@@ -1,12 +1,8 @@
-import 'package:http/http.dart' as http;
 import 'package:sliding_sync/sliding_sync.dart';
 import 'package:test/test.dart';
 
 SlidingSync _createSync() {
   return SlidingSync(
-    homeserverUrl: Uri.parse('https://matrix.example.com'),
-    accessToken: 'test_token',
-    client: http.Client(),
     catchUpTimeout: const Duration(seconds: 2),
     longPollTimeout: const Duration(seconds: 30),
   );
@@ -227,9 +223,6 @@ void main() {
   group('SlidingSync — timeout behavior', () {
     test('uses catchUpTimeout when lists are not fully synced', () {
       final sync = SlidingSync(
-        homeserverUrl: Uri.parse('https://example.com'),
-        accessToken: 'token',
-        client: http.Client(),
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -241,9 +234,6 @@ void main() {
 
     test('uses longPollTimeout when all lists are fully synced', () {
       final sync = SlidingSync(
-        homeserverUrl: Uri.parse('https://example.com'),
-        accessToken: 'token',
-        client: http.Client(),
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -266,9 +256,6 @@ void main() {
 
     test('switches from catchUp to longPoll as lists finish loading', () {
       final sync = SlidingSync(
-        homeserverUrl: Uri.parse('https://example.com'),
-        accessToken: 'token',
-        client: http.Client(),
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );

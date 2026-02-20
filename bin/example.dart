@@ -6,57 +6,53 @@ import 'package:http/http.dart' as http;
 import 'package:sliding_sync/sliding_sync.dart';
 
 Future<void> main() async {
-  final client = http.Client();
+  // Configure sync state early — client is available before login.
+  final slidingSync = SlidingSyncBuilder()
+    .setClient(http.Client())
+    .setConnId('main')
+    .addList(SlidingSyncList(
+      name: 'all-rooms',
+      syncMode: SyncMode.growing,
+      batchSize: 20,
+      timelineLimit: 5,
+      requiredState: [
+        ['m.room.encryption', ''],
+        ['m.room.topic', ''],
+      ],
+    ))
+    .addList(SlidingSyncList(
+      name: 'invites',
+      syncMode: SyncMode.selective,
+      timelineLimit: 0,
+      filters: const SlidingRoomFilter(isInvited: true),
+      initialRanges: [[0, 9]],
+    ))
+    .subscribeToRooms(
+      ['!room123:example.com'],
+      const RoomSubscription(
+        timelineLimit: 50,
+        requiredState: [['m.room.topic', '']],
+      ),
+    )
+    .enableExtension('e2ee')
+    .enableExtension('to_device')
+    .build();
 
-  final slidingSync = SlidingSync(
-    homeserverUrl: Uri.parse('https://matrix.example.com'),
-    accessToken: 'syt_your_token_here',
-    client: client,
-    // Fast polling while catching up, slow long-poll once fully synced.
-    catchUpTimeout: const Duration(seconds: 2),
-    longPollTimeout: const Duration(seconds: 30),
-  );
+  // Connection details — available after login.
+  final homeserverUrl = Uri.parse('https://matrix.example.com');
+  const accessToken = 'syt_your_token_here';
+  const userId = '@user:example.com';
 
-  // Add a growing list that fetches 20 rooms at a time.
-  slidingSync.addList(SlidingSyncList(
-    name: 'all-rooms',
-    syncMode: SyncMode.growing,
-    batchSize: 20,
-    timelineLimit: 5,
-    requiredState: [
-      ['m.room.encryption', ''],
-      ['m.room.topic', ''],
-    ],
-  ));
-
-  // Add a selective list for invites only.
-  slidingSync.addList(SlidingSyncList(
-    name: 'invites',
-    syncMode: SyncMode.selective,
-    timelineLimit: 0,
-    filters: const SlidingRoomFilter(isInvited: true),
-    initialRanges: [[0, 9]],
-  ));
-
-  // Subscribe to a specific room for full updates.
-  slidingSync.subscribeToRooms(
-    ['!room123:example.com'],
-    const RoomSubscription(
-      timelineLimit: 50,
-      requiredState: [['m.room.topic', '']],
-    ),
-  );
-
-  // Enable E2EE + to-device extensions.
-  slidingSync.enableExtension('e2ee');
-  slidingSync.enableExtension('to_device');
-
-  // Run the sync loop.
-  // During catch-up: requests use 2s timeout for fast batching.
-  // Once fully synced: requests use 30s timeout for long-polling.
+  // Run the sync loop — pass connection details at call time.
   while (true) {
     try {
-      final update = await slidingSync.syncOnce();
+      final update = await slidingSync.syncOnce(
+        homeserverUrl: homeserverUrl,
+        accessToken: accessToken,
+        userId: userId,
+        catchUpTimeout: const Duration(seconds: 2),
+        longPollTimeout: const Duration(seconds: 30),
+      );
       print(update);
 
       if (slidingSync.isFullySynced) {

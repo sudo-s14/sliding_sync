@@ -11,31 +11,104 @@ import 'models/response.dart';
 import 'models/sync_update.dart';
 import 'sliding_sync_list.dart';
 
+/// Builder for [SlidingSync]. Configure lists, subscriptions, and
+/// extensions incrementally, then call [build].
+class SlidingSyncBuilder {
+  http.Client _client = http.Client();
+  String _connId = 'main';
+  Duration _catchUpTimeout = const Duration(seconds: 2);
+  Duration _longPollTimeout = const Duration(seconds: 30);
+  final List<SlidingSyncList> _lists = [];
+  final Map<String, RoomSubscription> _roomSubscriptions = {};
+  final Set<String> _extensions = {};
+
+  SlidingSyncBuilder();
+
+  SlidingSyncBuilder setClient(http.Client client) {
+    _client = client;
+    return this;
+  }
+
+  SlidingSyncBuilder setConnId(String id) {
+    _connId = id;
+    return this;
+  }
+
+  SlidingSyncBuilder setCatchUpTimeout(Duration timeout) {
+    _catchUpTimeout = timeout;
+    return this;
+  }
+
+  SlidingSyncBuilder setLongPollTimeout(Duration timeout) {
+    _longPollTimeout = timeout;
+    return this;
+  }
+
+  SlidingSyncBuilder addList(SlidingSyncList list) {
+    _lists.add(list);
+    return this;
+  }
+
+  SlidingSyncBuilder subscribeToRooms(
+    List<String> roomIds,
+    RoomSubscription config,
+  ) {
+    for (final id in roomIds) {
+      _roomSubscriptions[id] = config;
+    }
+    return this;
+  }
+
+  SlidingSyncBuilder enableExtension(String name) {
+    _extensions.add(name);
+    return this;
+  }
+
+  SlidingSyncBuilder enableAllExtensions() {
+    _extensions.addAll([
+      'e2ee', 'to_device', 'account_data', 'typing', 'receipts',
+    ]);
+    return this;
+  }
+
+  SlidingSync build() {
+    final sync = SlidingSync(
+      client: _client,
+      connId: _connId,
+      catchUpTimeout: _catchUpTimeout,
+      longPollTimeout: _longPollTimeout,
+    );
+    for (final list in _lists) {
+      sync.addList(list);
+    }
+    for (final entry in _roomSubscriptions.entries) {
+      sync.subscribeToRooms([entry.key], entry.value);
+    }
+    for (final ext in _extensions) {
+      sync.enableExtension(ext);
+    }
+    return sync;
+  }
+}
+
 class SlidingSync {
-  final Uri homeserverUrl;
-  final String accessToken;
-  final String? userId;
+  final http.Client client;
   final String connId;
   final Duration catchUpTimeout;
   final Duration longPollTimeout;
-  final http.Client client;
 
   final Map<String, SlidingSyncList> _lists = {};
   final Map<String, RoomSubscription> _roomSubscriptions = {};
   final Map<String, ExtensionConfig> _extensions = {};
 
   String? _pos;
-  String? _currentUserId;
 
   SlidingSync({
-    required this.homeserverUrl,
-    required this.accessToken,
-    required this.client,
-    this.userId,
+    http.Client? client,
     this.connId = 'main',
     this.catchUpTimeout = const Duration(seconds: 2),
     this.longPollTimeout = const Duration(seconds: 30),
-  }) : _currentUserId = userId;
+  }) : client = client ?? http.Client();
 
   // ── List management ──
 
@@ -86,8 +159,13 @@ class SlidingSync {
 
   // ── Request building ──
 
-  SlidingSyncRequest buildRequest() {
-    final timeout = isFullySynced ? longPollTimeout : catchUpTimeout;
+  SlidingSyncRequest buildRequest({
+    Duration? catchUpTimeout,
+    Duration? longPollTimeout,
+  }) {
+    final effectiveCatchUp = catchUpTimeout ?? this.catchUpTimeout;
+    final effectiveLongPoll = longPollTimeout ?? this.longPollTimeout;
+    final timeout = isFullySynced ? effectiveLongPoll : effectiveCatchUp;
     return SlidingSyncRequest(
       connId: connId,
       pos: _pos,
@@ -100,7 +178,7 @@ class SlidingSync {
 
   // ── Response handling ──
 
-  SyncUpdate handleResponse(SlidingSyncResponse response) {
+  SyncUpdate handleResponse(SlidingSyncResponse response, {String? userId}) {
     _pos = response.pos;
 
     final updatedLists = <String>[];
@@ -120,13 +198,17 @@ class SlidingSync {
       updatedLists: updatedLists,
       rawRooms: response.rooms,
       rawExtensions: response.extensions,
-      currentUserId: _currentUserId,
+      currentUserId: userId,
     );
   }
 
   // ── HTTP sync call ──
 
-  Future<SlidingSyncResponse> _sendRequest(SlidingSyncRequest request) async {
+  Future<SlidingSyncResponse> _sendRequest(
+    SlidingSyncRequest request, {
+    required Uri homeserverUrl,
+    required String accessToken,
+  }) async {
     final uri = homeserverUrl.resolve(
       '/_matrix/client/unstable/org.matrix.msc4186/sync',
     ).replace(queryParameters: request.toQueryParameters());
@@ -163,11 +245,28 @@ class SlidingSync {
   // ── Single sync tick ──
 
   /// Performs a single sync request and returns the parsed sync update.
-  Future<SyncUpdate> syncOnce() async {
-    final request = buildRequest();
+  ///
+  /// Connection details are passed at call time so the caller can
+  /// configure lists/extensions/subscriptions early and provide
+  /// credentials when ready.
+  Future<SyncUpdate> syncOnce({
+    required Uri homeserverUrl,
+    required String accessToken,
+    String? userId,
+    Duration? catchUpTimeout,
+    Duration? longPollTimeout,
+  }) async {
+    final request = buildRequest(
+      catchUpTimeout: catchUpTimeout,
+      longPollTimeout: longPollTimeout,
+    );
     _logRequest(request);
-    final response = await _sendRequest(request);
-    final update = handleResponse(response);
+    final response = await _sendRequest(
+      request,
+      homeserverUrl: homeserverUrl,
+      accessToken: accessToken,
+    );
+    final update = handleResponse(response, userId: userId);
     _logResponse(response, update);
     return update;
   }

@@ -34,24 +34,57 @@ class SyncListResponse {
 class SlidingRoomResponse {
   final String? name;
   final bool initial;
+  final bool limited;
+  final String? prevBatch;
+  final int? bumpStamp;
+  final int? numLive;
+  final int? joinedCount;
+  final int? invitedCount;
+  final int highlightCount;
+  final int notificationCount;
   final List<Map<String, dynamic>> timeline;
   final List<Map<String, dynamic>> requiredState;
+  final List<Map<String, dynamic>>? inviteState;
+  final List<Map<String, dynamic>> heroes;
 
   const SlidingRoomResponse({
     this.name,
     this.initial = false,
+    this.limited = false,
+    this.prevBatch,
+    this.bumpStamp,
+    this.numLive,
+    this.joinedCount,
+    this.invitedCount,
+    this.highlightCount = 0,
+    this.notificationCount = 0,
     this.timeline = const [],
     this.requiredState = const [],
+    this.inviteState,
+    this.heroes = const [],
   });
 
   factory SlidingRoomResponse.fromJson(Map<String, dynamic> json) {
+    final unread = json['unread_notifications'] as Map<String, dynamic>?;
     return SlidingRoomResponse(
       name: json['name'] as String?,
       initial: json['initial'] as bool? ?? false,
+      limited: json['limited'] as bool? ?? false,
+      prevBatch: json['prev_batch'] as String?,
+      bumpStamp: json['bump_stamp'] as int?,
+      numLive: json['num_live'] as int?,
+      joinedCount: json['joined_count'] as int?,
+      invitedCount: json['invited_count'] as int?,
+      highlightCount: (unread?['highlight_count'] as int?) ?? 0,
+      notificationCount: (unread?['notification_count'] as int?) ?? 0,
       timeline:
           (json['timeline'] as List? ?? []).cast<Map<String, dynamic>>(),
       requiredState:
           (json['required_state'] as List? ?? []).cast<Map<String, dynamic>>(),
+      inviteState:
+          (json['invite_state'] as List?)?.cast<Map<String, dynamic>>(),
+      heroes:
+          (json['heroes'] as List? ?? []).cast<Map<String, dynamic>>(),
     );
   }
 }

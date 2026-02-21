@@ -3,6 +3,7 @@
 import 'enums.dart';
 import 'models/request.dart';
 import 'models/response.dart' show SyncListResponse;
+import 'models/sync_state.dart';
 
 class SlidingSyncList {
   final String name;
@@ -115,6 +116,28 @@ class SlidingSyncList {
         if (newEnd <= currentEnd) return [0, currentEnd];
         return [0, newEnd];
     }
+  }
+
+  // ── State persistence ──
+
+  SyncListState exportState() {
+    return SyncListState(
+      range: _ranges.isNotEmpty ? _ranges.first : null,
+      serverRoomCount: _serverRoomCount,
+    );
+  }
+
+  void restoreState(SyncListState state) {
+    if (state.range != null) {
+      _ranges = [state.range!];
+      if (syncMode == SyncMode.paging) {
+        _pageOffset = state.range![1] + 1;
+      }
+    }
+    _serverRoomCount = state.serverRoomCount;
+    _loadingState = _isFullyLoaded
+        ? ListLoadingState.fullyLoaded
+        : ListLoadingState.partiallyLoaded;
   }
 
   /// Build the list config portion of the request.

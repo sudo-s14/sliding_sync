@@ -4,9 +4,8 @@ import 'package:test/test.dart';
 
 SlidingSync _createSync() {
   return SlidingSync(
-    homeserverUrl: Uri.parse('https://matrix.example.com'),
-    accessToken: 'test_token',
     client: http.Client(),
+    connId: 'test',
     catchUpTimeout: const Duration(seconds: 2),
     longPollTimeout: const Duration(seconds: 30),
   );
@@ -118,7 +117,7 @@ void main() {
       final sync = _createSync();
       final request = sync.buildRequest();
 
-      expect(request.connId, 'main');
+      expect(request.connId, 'test');
       expect(request.timeout, 2000); // catchUpTimeout since no lists
     });
 
@@ -153,7 +152,7 @@ void main() {
       sync.enableExtension('e2ee');
 
       final json = sync.buildRequest().toJson();
-      expect(json['conn_id'], 'main');
+      expect(json['conn_id'], 'test');
       expect(json['lists'], isA<Map>());
       expect(json['room_subscriptions'], isA<Map>());
       expect(json['extensions'], isA<Map>());
@@ -175,18 +174,18 @@ void main() {
       final sync = _createSync();
       sync.addList(SlidingSyncList(name: 'rooms', batchSize: 10));
 
-      final summary = sync.handleResponse(SlidingSyncResponse(
+      final update = sync.handleResponse(SlidingSyncResponse(
         pos: '1',
         lists: {'rooms': _listResponse(50, [0, 9])},
       ));
 
-      expect(summary.lists, ['rooms']);
+      expect(update.updatedLists, ['rooms']);
     });
 
     test('returns updated room IDs', () {
       final sync = _createSync();
 
-      final summary = sync.handleResponse(const SlidingSyncResponse(
+      final update = sync.handleResponse(const SlidingSyncResponse(
         pos: '1',
         rooms: {
           '!a:ex.com': SlidingRoomResponse(name: 'Room A', initial: true),
@@ -194,18 +193,19 @@ void main() {
         },
       ));
 
-      expect(summary.rooms, containsAll(['!a:ex.com', '!b:ex.com']));
+      expect(update.rooms.joined.keys,
+          containsAll(['!a:ex.com', '!b:ex.com']));
     });
 
     test('ignores list responses for unknown lists', () {
       final sync = _createSync();
 
-      final summary = sync.handleResponse(SlidingSyncResponse(
+      final update = sync.handleResponse(SlidingSyncResponse(
         pos: '1',
         lists: {'unknown-list': _listResponse(10, [0, 9])},
       ));
 
-      expect(summary.lists, isEmpty);
+      expect(update.updatedLists, isEmpty);
     });
 
     test('forwards response to list handleResponse', () {
@@ -226,9 +226,8 @@ void main() {
   group('SlidingSync — timeout behavior', () {
     test('uses catchUpTimeout when lists are not fully synced', () {
       final sync = SlidingSync(
-        homeserverUrl: Uri.parse('https://example.com'),
-        accessToken: 'token',
         client: http.Client(),
+        connId: 'test',
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -240,9 +239,8 @@ void main() {
 
     test('uses longPollTimeout when all lists are fully synced', () {
       final sync = SlidingSync(
-        homeserverUrl: Uri.parse('https://example.com'),
-        accessToken: 'token',
         client: http.Client(),
+        connId: 'test',
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -265,9 +263,8 @@ void main() {
 
     test('switches from catchUp to longPoll as lists finish loading', () {
       final sync = SlidingSync(
-        homeserverUrl: Uri.parse('https://example.com'),
-        accessToken: 'token',
         client: http.Client(),
+        connId: 'test',
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -355,7 +352,7 @@ void main() {
         expect(log, contains('>>> REQUEST'));
         expect(log, contains('pos=null'));
         expect(log, contains('timeout=2000ms'));
-        expect(log, contains('conn_id=main'));
+        expect(log, contains('conn_id=test'));
       });
 
       test('includes list ranges', () {
@@ -416,8 +413,8 @@ void main() {
       test('includes pos', () {
         final sync = _createSync();
         const response = SlidingSyncResponse(pos: 'abc');
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, contains('<<< RESPONSE'));
         expect(log, contains('pos=abc'));
@@ -431,8 +428,8 @@ void main() {
           pos: '1',
           lists: {'rooms': _listResponse(50, [0, 9])},
         );
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, contains('list:rooms(count=50, ranges='));
       });
@@ -446,8 +443,8 @@ void main() {
             '!b:ex.com': SlidingRoomResponse(name: 'B', initial: true),
           },
         );
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, contains('rooms=2 updated'));
       });
@@ -455,8 +452,8 @@ void main() {
       test('omits rooms when none updated', () {
         final sync = _createSync();
         const response = SlidingSyncResponse(pos: '1');
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, isNot(contains('rooms=')));
       });
@@ -469,8 +466,8 @@ void main() {
           pos: '1',
           lists: {'rooms': _listResponse(50, [0, 9])},
         );
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, contains('rooms:partiallyLoaded'));
       });
@@ -487,8 +484,8 @@ void main() {
           pos: '1',
           lists: {'rooms': _listResponse(10, [0, 9])},
         );
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, contains('[FULLY SYNCED]'));
       });
@@ -501,8 +498,8 @@ void main() {
           pos: '1',
           lists: {'rooms': _listResponse(50, [0, 9])},
         );
-        final summary = sync.handleResponse(response);
-        final log = sync.formatResponseLog(response, summary);
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
 
         expect(log, isNot(contains('[FULLY SYNCED]')));
       });

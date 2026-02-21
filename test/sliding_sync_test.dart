@@ -1,8 +1,11 @@
+import 'package:http/http.dart' as http;
 import 'package:sliding_sync/sliding_sync.dart';
 import 'package:test/test.dart';
 
 SlidingSync _createSync() {
   return SlidingSync(
+    client: http.Client(),
+    connId: 'test',
     catchUpTimeout: const Duration(seconds: 2),
     longPollTimeout: const Duration(seconds: 30),
   );
@@ -114,7 +117,7 @@ void main() {
       final sync = _createSync();
       final request = sync.buildRequest();
 
-      expect(request.connId, 'main');
+      expect(request.connId, 'test');
       expect(request.timeout, 2000); // catchUpTimeout since no lists
     });
 
@@ -149,7 +152,7 @@ void main() {
       sync.enableExtension('e2ee');
 
       final json = sync.buildRequest().toJson();
-      expect(json['conn_id'], 'main');
+      expect(json['conn_id'], 'test');
       expect(json['lists'], isA<Map>());
       expect(json['room_subscriptions'], isA<Map>());
       expect(json['extensions'], isA<Map>());
@@ -223,6 +226,8 @@ void main() {
   group('SlidingSync — timeout behavior', () {
     test('uses catchUpTimeout when lists are not fully synced', () {
       final sync = SlidingSync(
+        client: http.Client(),
+        connId: 'test',
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -234,6 +239,8 @@ void main() {
 
     test('uses longPollTimeout when all lists are fully synced', () {
       final sync = SlidingSync(
+        client: http.Client(),
+        connId: 'test',
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -256,6 +263,8 @@ void main() {
 
     test('switches from catchUp to longPoll as lists finish loading', () {
       final sync = SlidingSync(
+        client: http.Client(),
+        connId: 'test',
         catchUpTimeout: const Duration(seconds: 2),
         longPollTimeout: const Duration(seconds: 30),
       );
@@ -343,7 +352,7 @@ void main() {
         expect(log, contains('>>> REQUEST'));
         expect(log, contains('pos=null'));
         expect(log, contains('timeout=2000ms'));
-        expect(log, contains('conn_id=main'));
+        expect(log, contains('conn_id=test'));
       });
 
       test('includes list ranges', () {

@@ -8,6 +8,7 @@ import 'enums.dart';
 import 'exception.dart';
 import 'models/request.dart';
 import 'models/response.dart';
+import 'models/sync_state.dart';
 import 'models/sync_update.dart';
 import 'sliding_sync_list.dart';
 
@@ -102,13 +103,14 @@ class SlidingSync {
   final Map<String, ExtensionConfig> _extensions = {};
 
   String? _pos;
+  String? _toDeviceSince;
 
   SlidingSync({
-    http.Client? client,
-    this.connId = 'main',
+    required this.client,
+    required this.connId,
     this.catchUpTimeout = const Duration(seconds: 2),
     this.longPollTimeout = const Duration(seconds: 30),
-  }) : client = client ?? http.Client();
+  });
 
   // ── List management ──
 
@@ -135,7 +137,14 @@ class SlidingSync {
   // ── Extensions ──
 
   void enableExtension(String name) {
-    _extensions[name] = const ExtensionConfig(enabled: true);
+    if (name == 'to_device') {
+      _extensions[name] = ToDeviceExtension(
+        enabled: true,
+        since: _toDeviceSince,
+      );
+    } else {
+      _extensions[name] = const ExtensionConfig(enabled: true);
+    }
   }
 
   void enableAllExtensions() {
@@ -147,6 +156,24 @@ class SlidingSync {
       'receipts',
     ]) {
       enableExtension(ext);
+    }
+  }
+
+  // ── State persistence ──
+
+  SyncState exportState() {
+    return SyncState(
+      pos: _pos,
+      toDeviceSince: _toDeviceSince,
+      lists: _lists.map((name, list) => MapEntry(name, list.exportState())),
+    );
+  }
+
+  void restoreState(SyncState state) {
+    _pos = state.pos;
+    _toDeviceSince = state.toDeviceSince;
+    for (final entry in state.lists.entries) {
+      _lists[entry.key]?.restoreState(entry.value);
     }
   }
 
@@ -162,7 +189,16 @@ class SlidingSync {
   SlidingSyncRequest buildRequest({
     Duration? catchUpTimeout,
     Duration? longPollTimeout,
+    SetPresence? setPresence,
   }) {
+    // Refresh to-device since token before building the request.
+    if (_extensions.containsKey('to_device')) {
+      _extensions['to_device'] = ToDeviceExtension(
+        enabled: true,
+        since: _toDeviceSince,
+      );
+    }
+
     final effectiveCatchUp = catchUpTimeout ?? this.catchUpTimeout;
     final effectiveLongPoll = longPollTimeout ?? this.longPollTimeout;
     final timeout = isFullySynced ? effectiveLongPoll : effectiveCatchUp;
@@ -170,6 +206,7 @@ class SlidingSync {
       connId: connId,
       pos: _pos,
       timeout: timeout.inMilliseconds,
+      setPresence: setPresence,
       lists: _lists.map((name, list) => MapEntry(name, list.toConfig())),
       roomSubscriptions: Map.of(_roomSubscriptions),
       extensions: Map.of(_extensions),
@@ -192,6 +229,15 @@ class SlidingSync {
       }
     }
 
+    // Track to-device since token from response.
+    final toDeviceData = response.extensions['to_device'];
+    if (toDeviceData is Map<String, dynamic>) {
+      final nextBatch = toDeviceData['next_batch'] as String?;
+      if (nextBatch != null) {
+        _toDeviceSince = nextBatch;
+      }
+    }
+
     // Parse rooms and extensions into SyncUpdate.
     return buildSyncUpdate(
       pos: response.pos,
@@ -209,9 +255,18 @@ class SlidingSync {
     required Uri homeserverUrl,
     required String accessToken,
   }) async {
-    final uri = homeserverUrl.resolve(
-      '/_matrix/client/unstable/org.matrix.msc4186/sync',
-    ).replace(queryParameters: request.toQueryParameters());
+    final uri = Uri(
+      scheme: homeserverUrl.scheme,
+      host: homeserverUrl.host,
+      port: homeserverUrl.port,
+      path: '/_matrix/client/unstable/org.matrix.msc4186/sync',
+      queryParameters: {
+        if (request.pos != null) 'pos': request.pos!,
+        if (request.timeout != null) 'timeout': request.timeout.toString(),
+        if (request.setPresence != null)
+          'set_presence': request.setPresence!.name,
+      },
+    );
 
     final response = await client.post(
       uri,
@@ -255,10 +310,12 @@ class SlidingSync {
     String? userId,
     Duration? catchUpTimeout,
     Duration? longPollTimeout,
+    SetPresence? setPresence,
   }) async {
     final request = buildRequest(
       catchUpTimeout: catchUpTimeout,
       longPollTimeout: longPollTimeout,
+      setPresence: setPresence,
     );
     _logRequest(request);
     final response = await _sendRequest(
@@ -268,7 +325,12 @@ class SlidingSync {
     );
     final update = handleResponse(response, userId: userId);
     _logResponse(response, update);
-    return update;
+    return SyncUpdate(
+      pos: update.pos,
+      updatedLists: update.updatedLists,
+      rooms: update.rooms,
+      extensions: update.extensions,
+    );
   }
 
   // ── Logging ──

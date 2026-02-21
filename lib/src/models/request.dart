@@ -1,5 +1,7 @@
 /// Data models for the sliding sync request.
 
+import '../enums.dart';
+
 class SlidingRoomFilter {
   final bool? isDm;
   final bool? isEncrypted;
@@ -67,10 +69,23 @@ class ExtensionConfig {
   Map<String, dynamic> toJson() => {'enabled': enabled};
 }
 
+class ToDeviceExtension extends ExtensionConfig {
+  final String? since;
+
+  const ToDeviceExtension({super.enabled = false, this.since});
+
+  @override
+  Map<String, dynamic> toJson() => {
+        ...super.toJson(),
+        if (since != null) 'since': since,
+      };
+}
+
 class SlidingSyncRequest {
   final String? connId;
   final String? pos;
   final int? timeout;
+  final SetPresence? setPresence;
   final Map<String, SyncListConfig> lists;
   final Map<String, RoomSubscription> roomSubscriptions;
   final Map<String, ExtensionConfig> extensions;
@@ -79,18 +94,13 @@ class SlidingSyncRequest {
     this.connId,
     this.pos,
     this.timeout,
+    this.setPresence,
     this.lists = const {},
     this.roomSubscriptions = const {},
     this.extensions = const {},
   });
 
-  /// Query parameters for the URL (?pos=...&timeout=...).
-  Map<String, String> toQueryParameters() => {
-        if (pos != null) 'pos': pos!,
-        if (timeout != null) 'timeout': timeout.toString(),
-      };
-
-  /// JSON body (everything except pos and timeout).
+  /// JSON body.
   Map<String, dynamic> toJson() => {
         if (connId != null) 'conn_id': connId,
         'lists': lists.map((k, v) => MapEntry(k, v.toJson())),

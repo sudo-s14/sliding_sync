@@ -3,6 +3,7 @@
 /// Modeled after matrix-rust-sdk's SyncResponse / RoomUpdates.
 
 import 'response.dart';
+import 'sync_state.dart';
 
 /// A parsed Matrix event.
 class MatrixEvent {
@@ -367,12 +368,14 @@ class SyncUpdate {
   final List<String> updatedLists;
   final RoomUpdates rooms;
   final ExtensionsUpdate extensions;
+  final SyncState? state;
 
   const SyncUpdate({
     required this.pos,
     this.updatedLists = const [],
     this.rooms = const RoomUpdates(),
     this.extensions = const ExtensionsUpdate(),
+    this.state,
   });
 
   @override

@@ -1,9 +1,10 @@
+import 'package:http/http.dart' as http;
 import 'package:sliding_sync/sliding_sync.dart';
 import 'package:test/test.dart';
 
 void main() {
   test('growing mode full flow: buildRequest + handleResponse for 4 ticks', () {
-    final sync = SlidingSync();
+    final sync = SlidingSync(client: http.Client(), connId: 'test');
     sync.addList(SlidingSyncList(
       name: 'rooms',
       syncMode: SyncMode.growing,

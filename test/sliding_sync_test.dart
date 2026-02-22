@@ -342,6 +342,29 @@ void main() {
     });
   });
 
+  group('SlidingSync — set_presence throttling', () {
+    test('includes set_presence on first request', () {
+      final sync = _createSync();
+      final request = sync.buildRequest(setPresence: SetPresence.online);
+      expect(request.setPresence, SetPresence.online);
+    });
+
+    test('omits set_presence when called again within 30 seconds', () {
+      final sync = _createSync();
+      final first = sync.buildRequest(setPresence: SetPresence.online);
+      expect(first.setPresence, SetPresence.online);
+
+      final second = sync.buildRequest(setPresence: SetPresence.online);
+      expect(second.setPresence, isNull);
+    });
+
+    test('omits set_presence when null is passed', () {
+      final sync = _createSync();
+      final request = sync.buildRequest();
+      expect(request.setPresence, isNull);
+    });
+  });
+
   group('SlidingSync — logging', () {
     group('formatRequestLog', () {
       test('includes pos, timeout, and conn_id', () {

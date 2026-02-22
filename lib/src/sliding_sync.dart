@@ -104,6 +104,9 @@ class SlidingSync {
 
   String? _pos;
   String? _toDeviceSince;
+  DateTime? _lastPresenceSentAt;
+
+  static const _presenceThrottle = Duration(seconds: 30);
 
   SlidingSync({
     required this.client,
@@ -199,6 +202,17 @@ class SlidingSync {
       );
     }
 
+    // Throttle set_presence — only send if 30+ seconds since last send.
+    SetPresence? effectivePresence;
+    if (setPresence != null) {
+      final now = DateTime.now();
+      if (_lastPresenceSentAt == null ||
+          now.difference(_lastPresenceSentAt!) >= _presenceThrottle) {
+        effectivePresence = setPresence;
+        _lastPresenceSentAt = now;
+      }
+    }
+
     final effectiveCatchUp = catchUpTimeout ?? this.catchUpTimeout;
     final effectiveLongPoll = longPollTimeout ?? this.longPollTimeout;
     final timeout = isFullySynced ? effectiveLongPoll : effectiveCatchUp;
@@ -206,7 +220,7 @@ class SlidingSync {
       connId: connId,
       pos: _pos,
       timeout: timeout.inMilliseconds,
-      setPresence: setPresence,
+      setPresence: effectivePresence,
       lists: _lists.map((name, list) => MapEntry(name, list.toConfig())),
       roomSubscriptions: Map.of(_roomSubscriptions),
       extensions: Map.of(_extensions),

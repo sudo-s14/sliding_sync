@@ -362,7 +362,7 @@ void main() {
         final request = sync.buildRequest();
         final log = sync.formatRequestLog(request);
 
-        expect(log, contains('list:rooms=[0, 9]'));
+        expect(log, contains('list:rooms range=[0, 9]'));
       });
 
       test('includes subscriptions', () {
@@ -431,31 +431,156 @@ void main() {
         final update = sync.handleResponse(response);
         final log = sync.formatResponseLog(response, update);
 
-        expect(log, contains('list:rooms(count=50, ranges='));
+        expect(log, contains('list:rooms count=50'));
       });
 
-      test('includes room update count', () {
+      test('logs room name and initial flag', () {
         final sync = _createSync();
         const response = SlidingSyncResponse(
           pos: '1',
           rooms: {
-            '!a:ex.com': SlidingRoomResponse(name: 'A', initial: true),
-            '!b:ex.com': SlidingRoomResponse(name: 'B', initial: true),
+            '!a:ex.com': SlidingRoomResponse(name: 'General', initial: true),
           },
         );
         final update = sync.handleResponse(response);
         final log = sync.formatResponseLog(response, update);
 
-        expect(log, contains('rooms=2 updated'));
+        expect(log, contains('room:!a:ex.com'));
+        expect(log, contains('name=General'));
+        expect(log, contains('initial=true'));
       });
 
-      test('omits rooms when none updated', () {
+      test('logs timeline events', () {
         final sync = _createSync();
-        const response = SlidingSyncResponse(pos: '1');
+        final response = SlidingSyncResponse(
+          pos: '1',
+          rooms: {
+            '!a:ex.com': SlidingRoomResponse(
+              name: 'Chat',
+              timeline: [
+                {
+                  'type': 'm.room.message',
+                  'sender': '@alice:ex.com',
+                  'event_id': '\$ev1',
+                  'origin_server_ts': 1000,
+                  'content': {'body': 'hello'},
+                },
+              ],
+            ),
+          },
+        );
         final update = sync.handleResponse(response);
         final log = sync.formatResponseLog(response, update);
 
-        expect(log, isNot(contains('rooms=')));
+        expect(log, contains('timeline=1 events'));
+        expect(log, contains('m.room.message from @alice:ex.com'));
+      });
+
+      test('logs required_state event types', () {
+        final sync = _createSync();
+        final response = SlidingSyncResponse(
+          pos: '1',
+          rooms: {
+            '!a:ex.com': SlidingRoomResponse(
+              requiredState: [
+                <String, dynamic>{
+                  'type': 'm.room.encryption',
+                  'state_key': '',
+                  'sender': '@bob:ex.com',
+                  'event_id': '\$ev2',
+                  'origin_server_ts': 1000,
+                  'content': <String, dynamic>{},
+                },
+                <String, dynamic>{
+                  'type': 'm.room.topic',
+                  'state_key': '',
+                  'sender': '@bob:ex.com',
+                  'event_id': '\$ev3',
+                  'origin_server_ts': 1000,
+                  'content': <String, dynamic>{},
+                },
+              ],
+            ),
+          },
+        );
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
+
+        expect(log, contains('required_state=[m.room.encryption, m.room.topic]'));
+      });
+
+      test('logs notification counts', () {
+        final sync = _createSync();
+        const response = SlidingSyncResponse(
+          pos: '1',
+          rooms: {
+            '!a:ex.com': SlidingRoomResponse(
+              notificationCount: 5,
+              highlightCount: 2,
+            ),
+          },
+        );
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
+
+        expect(log, contains('notifications=5'));
+        expect(log, contains('highlights=2'));
+      });
+
+      test('logs invited rooms with invite_state', () {
+        final sync = _createSync();
+        final response = SlidingSyncResponse(
+          pos: '1',
+          rooms: {
+            '!inv:ex.com': SlidingRoomResponse(
+              inviteState: [
+                {
+                  'type': 'm.room.member',
+                  'state_key': '@me:ex.com',
+                  'sender': '@them:ex.com',
+                  'content': {'membership': 'invite'},
+                },
+                {
+                  'type': 'm.room.name',
+                  'state_key': '',
+                  'sender': '@them:ex.com',
+                  'content': {'name': 'Secret Room'},
+                },
+              ],
+            ),
+          },
+        );
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
+
+        expect(log, contains('invited:!inv:ex.com'));
+        expect(log, contains('invite_state=[m.room.member, m.room.name]'));
+      });
+
+      test('logs to_device extension', () {
+        final sync = _createSync();
+        final response = SlidingSyncResponse(
+          pos: '1',
+          extensions: {
+            'to_device': {
+              'next_batch': 'td_5',
+              'events': [
+                <String, dynamic>{
+                  'type': 'm.room.encrypted',
+                  'sender': '@a:ex.com',
+                  'event_id': '\$td1',
+                  'origin_server_ts': 1000,
+                  'content': <String, dynamic>{},
+                },
+              ],
+            },
+          },
+        );
+        final update = sync.handleResponse(response);
+        final log = sync.formatResponseLog(response, update);
+
+        expect(log, contains('to_device: 1 events'));
+        expect(log, contains('next_batch=td_5'));
       });
 
       test('includes loading state per list', () {

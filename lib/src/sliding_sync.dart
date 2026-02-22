@@ -317,7 +317,7 @@ class SlidingSync {
       longPollTimeout: longPollTimeout,
       setPresence: setPresence,
     );
-    _logRequest(request);
+    _logRequest(request, homeserverUrl);
     final response = await _sendRequest(
       request,
       homeserverUrl: homeserverUrl,
@@ -335,58 +335,133 @@ class SlidingSync {
 
   // ── Logging ──
 
-  void _logRequest(SlidingSyncRequest request) {
-    print(formatRequestLog(request));
+  void _logRequest(SlidingSyncRequest request, Uri homeserverUrl) {
+    print(formatRequestLog(request, homeserverUrl));
   }
 
   void _logResponse(SlidingSyncResponse response, SyncUpdate update) {
     print(formatResponseLog(response, update));
   }
 
-  /// Formats a request log line. Exposed for testing.
-  String formatRequestLog(SlidingSyncRequest request) {
-    final buf = StringBuffer('[SlidingSync] >>> REQUEST');
-    buf.write(' pos=${request.pos ?? 'null'}');
-    buf.write(' timeout=${request.timeout}ms');
-    buf.write(' conn_id=${request.connId}');
+  /// Formats a request log. Exposed for testing.
+  String formatRequestLog(SlidingSyncRequest request, [Uri? homeserverUrl]) {
+    final buf = StringBuffer('[SlidingSync] >>> REQUEST\n');
+
+    // URL with query parameters.
+    if (homeserverUrl != null) {
+      final uri = Uri(
+        scheme: homeserverUrl.scheme,
+        host: homeserverUrl.host,
+        port: homeserverUrl.port,
+        path: '/_matrix/client/unstable/org.matrix.msc4186/sync',
+        queryParameters: {
+          if (request.pos != null) 'pos': request.pos!,
+          if (request.timeout != null) 'timeout': request.timeout.toString(),
+          if (request.setPresence != null)
+            'set_presence': request.setPresence!.name,
+        },
+      );
+      buf.writeln('  url=$uri');
+    }
+
+    buf.writeln('  pos=${request.pos ?? 'null'} timeout=${request.timeout}ms conn_id=${request.connId}');
+    if (request.setPresence != null) {
+      buf.writeln('  set_presence=${request.setPresence!.name}');
+    }
     for (final entry in request.lists.entries) {
-      final range = entry.value.range;
-      buf.write(' list:${entry.key}=${range ?? 'null'}');
+      buf.writeln('  list:${entry.key} range=${entry.value.range ?? 'null'}');
     }
     if (request.roomSubscriptions.isNotEmpty) {
-      buf.write(' subscriptions=${request.roomSubscriptions.keys.toList()}');
+      buf.writeln('  subscriptions=${request.roomSubscriptions.keys.toList()}');
     }
     if (request.extensions.isNotEmpty) {
-      buf.write(' extensions=${request.extensions.keys.toList()}');
+      buf.writeln('  extensions=${request.extensions.keys.toList()}');
     }
-    return buf.toString();
+    return buf.toString().trimRight();
   }
 
-  /// Formats a response log line. Exposed for testing.
+  /// Formats a response log. Exposed for testing.
   String formatResponseLog(SlidingSyncResponse response, SyncUpdate update) {
-    final buf = StringBuffer('[SlidingSync] <<< RESPONSE');
-    buf.write(' pos=${response.pos}');
+    final buf = StringBuffer('[SlidingSync] <<< RESPONSE\n');
+    buf.writeln('  pos=${response.pos}');
+
+    // Lists.
     for (final entry in response.lists.entries) {
       final ops = entry.value.ops;
       final ranges = ops.where((o) => o.range != null).map((o) => o.range);
-      buf.write(' list:${entry.key}(count=${entry.value.count}');
-      if (ranges.isNotEmpty) buf.write(', ranges=$ranges');
-      buf.write(')');
-    }
-    final totalRooms = update.rooms.totalCount;
-    if (totalRooms > 0) {
-      buf.write(' rooms=$totalRooms updated');
-      if (update.rooms.invited.isNotEmpty) {
-        buf.write(' (${update.rooms.invited.length} invited)');
-      }
-      if (update.rooms.left.isNotEmpty) {
-        buf.write(' (${update.rooms.left.length} left)');
-      }
+      buf.write('  list:${entry.key} count=${entry.value.count}');
+      if (ranges.isNotEmpty) buf.write(' ranges=$ranges');
+      buf.writeln();
     }
     for (final entry in _lists.entries) {
-      buf.write(' ${entry.key}:${entry.value.loadingState.name}');
+      buf.writeln('  ${entry.key}:${entry.value.loadingState.name}');
     }
-    if (isFullySynced) buf.write(' [FULLY SYNCED]');
-    return buf.toString();
+
+    // Joined rooms.
+    for (final entry in update.rooms.joined.entries) {
+      final room = entry.value;
+      buf.writeln('  room:${entry.key}');
+      if (room.name != null) buf.writeln('    name=${room.name}');
+      if (room.initial) buf.writeln('    initial=true');
+      if (room.stateEvents.isNotEmpty) {
+        buf.writeln('    required_state=[${room.stateEvents.map((e) => e.type).join(', ')}]');
+      }
+      if (room.timeline.events.isNotEmpty) {
+        buf.writeln('    timeline=${room.timeline.events.length} events (limited=${room.timeline.limited})');
+        for (final e in room.timeline.events) {
+          buf.writeln('      ${e.type} from ${e.sender}');
+        }
+      }
+      final notif = room.unreadNotifications;
+      if (notif.notificationCount > 0 || notif.highlightCount > 0) {
+        buf.writeln('    notifications=${notif.notificationCount} highlights=${notif.highlightCount}');
+      }
+    }
+
+    // Invited rooms.
+    for (final entry in update.rooms.invited.entries) {
+      final room = entry.value;
+      buf.writeln('  invited:${entry.key}');
+      if (room.inviteState.isNotEmpty) {
+        buf.writeln('    invite_state=[${room.inviteState.map((e) => e.type).join(', ')}]');
+      }
+    }
+
+    // Left rooms.
+    for (final entry in update.rooms.left.entries) {
+      buf.writeln('  left:${entry.key}');
+    }
+
+    // Extensions.
+    final ext = update.extensions;
+    if (!ext.toDevice.isEmpty) {
+      buf.writeln('  to_device: ${ext.toDevice.events.length} events, next_batch=${ext.toDevice.nextBatch}');
+    }
+    if (!ext.e2ee.isEmpty) {
+      buf.write('  e2ee:');
+      if (ext.e2ee.deviceLists.changed.isNotEmpty) {
+        buf.write(' device_changed=${ext.e2ee.deviceLists.changed.length}');
+      }
+      if (ext.e2ee.deviceOneTimeKeysCount.isNotEmpty) {
+        buf.write(' otk=${ ext.e2ee.deviceOneTimeKeysCount}');
+      }
+      buf.writeln();
+    }
+    if (!ext.accountData.isEmpty) {
+      buf.write('  account_data: ${ext.accountData.global.length} global');
+      if (ext.accountData.rooms.isNotEmpty) {
+        buf.write(', ${ext.accountData.rooms.length} rooms');
+      }
+      buf.writeln();
+    }
+    if (!ext.typing.isEmpty) {
+      buf.writeln('  typing: ${ext.typing.rooms.length} rooms');
+    }
+    if (!ext.receipts.isEmpty) {
+      buf.writeln('  receipts: ${ext.receipts.rooms.length} rooms');
+    }
+
+    if (isFullySynced) buf.writeln('  [FULLY SYNCED]');
+    return buf.toString().trimRight();
   }
 }
